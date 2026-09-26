@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Privacy Guard</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <h1>Privacy Guard</h1>
+    <button id="refresh" title="Atualizar">&#x21bb;</button>
+  </header>
+
+  <section id="page">
+    <div class="label">Página</div>
+    <div id="page-site" class="mono">—</div>
+  </section>
+
+  <section id="summary" class="grid">
+    <div class="stat"><span id="n-third-domains">0</span><small>domínios de 3ª parte</small></div>
+    <div class="stat"><span id="n-third-req">0</span><small>requisições de 3ª parte</small></div>
+    <div class="stat"><span id="n-total-req">0</span><small>requisições totais</small></div>
+  </section>
+
+  <section>
+    <h2>Conexões de terceira parte</h2>
+    <p id="empty" class="muted" hidden>Nenhuma conexão de terceira parte observada.</p>
+    <ul id="third-list"></ul>
+  </section>
+
+  <p id="no-data" class="muted" hidden>
+    Sem dados para esta aba. Recarregue a página (F5) com a extensão ativa.
+  </p>
+
+  <script src="popup.js"></script>
+</body>
+</html>
