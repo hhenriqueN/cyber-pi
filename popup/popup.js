@@ -8,6 +8,8 @@
 
 const $ = (id) => document.getElementById(id);
 
+let blockListCache = []; // domínios bloqueados (preenchido ao abrir o popup)
+
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -28,10 +30,13 @@ function renderThirdParties(list) {
   for (const tp of list) {
     const li = el("li");
 
+    const head = el("div", "head");
     const row = el("div", "row");
     row.append(el("span", "site mono", tp.site));
     row.append(el("span", "count", `${tp.count} req`));
-    li.append(row);
+    head.append(row);
+    head.append(makeBlockButton(tp.site));
+    li.append(head);
 
     li.append(el("div", "detail mono", tp.hosts.join(", ")));
     li.append(el("div", "detail", `tipos: ${tp.types.join(", ")}`));
@@ -339,7 +344,66 @@ function renderHijack(h) {
   }
 }
 
+function makeBlockButton(site) {
+  const blocked = blockListCache.includes(site);
+  const btn = el("button", "block-btn" + (blocked ? " blocked" : ""), blocked ? "bloqueado" : "bloquear");
+  btn.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    blockListCache = await browser.runtime.sendMessage({
+      type: blocked ? "unblockSite" : "blockSite", site
+    });
+    render();
+  });
+  return btn;
+}
+
+function renderScore(score, blocked) {
+  const sec = $("score-section");
+  sec.className = "grade-" + score.grade;
+  $("score-grade").textContent = score.grade;
+  $("score-num").textContent = score.score + "/100";
+  const nBlocked = blocked.reduce((n, b) => n + b.count, 0);
+  $("score-caption").textContent =
+    `Nota ${score.grade} (${score.score}/100).` +
+    (nBlocked ? ` ${nBlocked} requisição(ões) bloqueada(s) nesta aba.` : "");
+
+  const tb = $("score-table").querySelector("tbody");
+  tb.replaceChildren();
+  for (const r of score.breakdown) {
+    const tr = document.createElement("tr");
+    tr.append(el("td", null, r.label));
+    tr.append(el("td", null, String(r.count)));
+    tr.append(el("td", null, r.deduction ? `-${r.deduction}` : "0"));
+    tb.append(tr);
+  }
+}
+
+function renderBlockList(blockedHere) {
+  const ul = $("block-list");
+  ul.replaceChildren();
+  for (const dom of blockListCache) {
+    const li = el("li");
+    li.append(el("span", "dom", dom));
+    const btn = el("button", null, "remover");
+    btn.addEventListener("click", async () => {
+      blockListCache = await browser.runtime.sendMessage({ type: "unblockSite", site: dom });
+      render();
+    });
+    li.append(btn);
+    ul.append(li);
+  }
+  const bh = $("blocked-here");
+  if (blockedHere && blockedHere.length) {
+    bh.hidden = false;
+    bh.textContent = "Bloqueado nesta aba: " +
+      blockedHere.map((b) => `${b.site} (${b.count})`).join(", ");
+  } else {
+    bh.hidden = true;
+  }
+}
+
 async function render() {
+  blockListCache = await browser.runtime.sendMessage({ type: "getBlockList" });
   const tabId = await getActiveTabId();
   const report = tabId === null
     ? null
@@ -357,6 +421,10 @@ async function render() {
     renderCanvas(EMPTY_CANVAS);
     renderTracking(EMPTY_TRACKING);
     renderHijack(EMPTY_HIJACK);
+    $("score-section").className = "";
+    $("score-grade").textContent = "–"; $("score-num").textContent = "--";
+    $("score-caption").textContent = "Recarregue a página para avaliar.";
+    renderBlockList([]);
     return;
   }
 
@@ -371,7 +439,19 @@ async function render() {
   renderCanvas(report.canvas || EMPTY_CANVAS);
   renderTracking(report.tracking || EMPTY_TRACKING);
   renderHijack(report.hijack || EMPTY_HIJACK);
+  renderScore(report.score, report.blocked || []);
+  renderBlockList(report.blocked || []);
 }
 
+async function addBlockFromInput() {
+  const raw = $("block-input").value.trim().toLowerCase()
+    .replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  if (!raw) return;
+  blockListCache = await browser.runtime.sendMessage({ type: "blockSite", site: raw });
+  $("block-input").value = "";
+  render();
+}
+$("block-add-btn").addEventListener("click", addBlockFromInput);
+$("block-input").addEventListener("keydown", (e) => { if (e.key === "Enter") addBlockFromInput(); });
 $("refresh").addEventListener("click", render);
 render();

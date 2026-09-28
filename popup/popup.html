@@ -16,6 +16,24 @@
     <div id="page-site" class="mono">—</div>
   </section>
 
+  <section id="score-section">
+    <div id="score-box">
+      <div id="score-ring"><span id="score-grade">–</span><small id="score-num">--</small></div>
+      <div id="score-text">
+        <strong>Pontuação de privacidade</strong>
+        <p class="muted small" id="score-caption">Recarregue a página para avaliar.</p>
+      </div>
+    </div>
+    <details id="score-details">
+      <summary>Como esta nota foi calculada</summary>
+      <table class="matrix" id="score-table">
+        <thead><tr><th>Categoria</th><th>Qtd.</th><th>Desconto</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p class="muted small">Parte de 100. Desconto por categoria (peso × quantidade, com limite). Fingerprinting e hijacking pesam mais porque o usuário não consegue apagá-los. Faixas: A 80-100 · B 60-79 · C 40-59 · D 20-39 · E 0-19.</p>
+    </details>
+  </section>
+
   <section id="summary" class="grid">
     <div class="stat"><span id="n-third-domains">0</span><small>domínios de 3ª parte</small></div>
     <div class="stat"><span id="n-third-req">0</span><small>requisições de 3ª parte</small></div>
@@ -90,7 +108,18 @@
     <p class="muted small">Polling periódico para terceiros: <span id="n-poll">0</span></p>
     <ul id="poll-list"></ul>
   </section>
-  
+
+  <section id="blocklist-section">
+    <h2>Lista de bloqueio personalizada</h2>
+    <p class="muted small">Requisições a estes domínios são canceladas em todas as páginas.</p>
+    <div id="block-add">
+      <input id="block-input" type="text" placeholder="ex.: doubleclick.net" autocomplete="off">
+      <button id="block-add-btn">Bloquear</button>
+    </div>
+    <ul id="block-list"></ul>
+    <p id="blocked-here" class="muted small" hidden></p>
+  </section>
+
   <p id="no-data" class="muted" hidden>
     Sem dados para esta aba. Recarregue a página (F5) com a extensão ativa.
   </p>

@@ -14,7 +14,7 @@ Desenvolvida para a Avaliação Intermediária de Cibersegurança (Insper).
 | Canvas fingerprint | ✅ |
 | Indicadores de hijacking/hook (WebSocket, polling, sobrescrita de globais) | ✅ |
 | Pontuação de privacidade | ✅ |
-| Lista de bloqueio personalizada | ⏳ |
+| Lista de bloqueio personalizada | ✅ |
 
 ## Como instalar (about:debugging)
 

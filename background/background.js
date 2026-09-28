@@ -16,6 +16,8 @@
  * Etapa 6: indicadores de sequestro de navegador (hijacking/hook): APIs
  *          nativas sobrescritas, WebSocket e polling persistente para
  *          domínios de terceira parte.
+ * Etapa 7: pontuação de privacidade (metodologia explícita) e lista de
+ *          bloqueio personalizada (webRequest bloqueante + storage.local).
  *
  * Regra de primeira x terceira parte:
  *   compara o domínio registrável (eTLD+1, via Public Suffix List / tldts)
@@ -28,6 +30,26 @@
 
 /** @type {Map<number, TabState>} estado por aba (tabId -> estado) */
 const tabs = new Map();
+
+/* ------------------------------------------------------------------ */
+/* Lista de bloqueio personalizada                                     */
+/* ------------------------------------------------------------------ */
+/*
+ * Conjunto de domínios registráveis (eTLD+1) que o usuário escolheu bloquear.
+ * Persistido em storage.local e carregado na inicialização. As requisições
+ * a esses domínios são canceladas em onBeforeRequest (listener bloqueante).
+ */
+const blockList = new Set();
+
+browser.storage.local.get("blockList").then((data) => {
+  if (Array.isArray(data.blockList)) {
+    for (const d of data.blockList) blockList.add(d);
+  }
+}).catch(() => {});
+
+function saveBlockList() {
+  browser.storage.local.set({ blockList: [...blockList] }).catch(() => {});
+}
 
 /* ------------------------------------------------------------------ */
 /* Utilitários de domínio                                              */
@@ -113,7 +135,8 @@ function newTabState(pageUrl, mainRequestId = null) {
     idTokens: new Map(),
     tokenSites: new Map(),
     cookieSync: new Map(),
-    hijack: { globals: new Map(), websockets: new Map(), endpoints: new Map() }
+    hijack: { globals: new Map(), websockets: new Map(), endpoints: new Map() },
+    blocked: new Map() // site -> nº de requisições canceladas
   };
 }
 
@@ -169,6 +192,14 @@ function onBeforeRequest(details) {
   if (!state) return;
 
   const reqSite = siteOf(details.url);
+
+  // Lista de bloqueio: cancela a requisição antes de qualquer registro.
+  if (reqSite && blockList.has(reqSite)) {
+    state.blocked.set(reqSite, (state.blocked.get(reqSite) || 0) + 1);
+    updateBadge(details.tabId);
+    return { cancel: true };
+  }
+
   state.requests.total++;
 
   if (!reqSite || reqSite === state.pageSite) {
@@ -199,7 +230,8 @@ function onBeforeRequest(details) {
 
 browser.webRequest.onBeforeRequest.addListener(
   onBeforeRequest,
-  { urls: ["<all_urls>"] }
+  { urls: ["<all_urls>"] },
+  ["blocking"]
 );
 
 /* ------------------------------------------------------------------ */
@@ -1013,10 +1045,62 @@ browser.tabs.onRemoved.addListener((tabId) => {
 function updateBadge(tabId) {
   const state = tabs.get(tabId);
   const n = state ? state.thirdParties.size : 0;
+  const blocked = state ? state.blocked.size : 0;
   browser.browserAction.setBadgeText({ tabId, text: n > 0 ? String(n) : "" })
     .catch(() => {}); // aba pode ter sido fechada
-  browser.browserAction.setBadgeBackgroundColor({ tabId, color: n > 10 ? "#d1242f" : "#bf8700" })
+  browser.browserAction.setBadgeBackgroundColor({ tabId, color: blocked > 0 ? "#1a7f37" : (n > 10 ? "#d1242f" : "#bf8700") })
     .catch(() => {});
+}
+
+/* ------------------------------------------------------------------ */
+/* Pontuação de privacidade                                            */
+/* ------------------------------------------------------------------ */
+/*
+ * Metodologia (explícita e justificada):
+ *   - parte de 100 pontos;
+ *   - cada categoria desconta pontos proporcionais à GRAVIDADE, com um LIMITE
+ *     por categoria (para uma única categoria não zerar a nota sozinha);
+ *   - os pesos refletem quanto o usuário CONSEGUE se defender:
+ *       fingerprinting e hijacking pesam mais, porque o usuário não consegue
+ *       apagá-los limpando cookies; um cookie de sessão pesa pouco.
+ *
+ * Categorias, peso por ocorrência e limite:
+ *   terceiros                 -2 cada, limite 20  (mais entidades recebendo dados)
+ *   cookies persist. 3ª parte -3 cada, limite 20  (rastreiam entre sites)
+ *   storage de 3ª parte       -4 cada, limite 12  (supercookie: sobrevive à limpeza)
+ *   canvas fingerprint       -15 cada, limite 30  (não pode ser apagado)
+ *   cookie sync / bounce     -10 cada, limite 20  (contorna as proteções)
+ *   hijacking / hook         -15 cada, limite 30  (indício de comprometimento)
+ *
+ * Faixas: A 80-100 · B 60-79 · C 40-59 · D 20-39 · E 0-19.
+ */
+const SCORE_RULES = [
+  { id: "thirdParties",     label: "Domínios de terceira parte",            per: 2,  cap: 20 },
+  { id: "persistentThird",  label: "Cookies persistentes de 3ª parte",      per: 3,  cap: 20 },
+  { id: "thirdStorage",     label: "Origens de 3ª parte usando storage",    per: 4,  cap: 12 },
+  { id: "fingerprint",      label: "Scripts de canvas fingerprint",          per: 15, cap: 30 },
+  { id: "syncBounce",       label: "Cookie sync / bounce tracking",          per: 10, cap: 20 },
+  { id: "hijack",           label: "Indicadores de hijacking/hook",          per: 15, cap: 30 }
+];
+
+function gradeOf(score) {
+  if (score >= 80) return "A";
+  if (score >= 60) return "B";
+  if (score >= 40) return "C";
+  if (score >= 20) return "D";
+  return "E";
+}
+
+function computeScore(counts) {
+  let score = 100;
+  const breakdown = SCORE_RULES.map((r) => {
+    const n = counts[r.id] || 0;
+    const deduction = Math.min(n * r.per, r.cap);
+    score -= deduction;
+    return { label: r.label, count: n, per: r.per, cap: r.cap, deduction };
+  });
+  score = Math.max(0, score);
+  return { score, grade: gradeOf(score), breakdown };
 }
 
 /* ------------------------------------------------------------------ */
@@ -1094,7 +1178,17 @@ function buildReport(tabId) {
     },
     navigation: state.navigation,
     tracking: buildTrackingReport(state),
-    hijack: buildHijackReport(state)
+    hijack: buildHijackReport(state),
+    blocked: [...state.blocked.entries()].map(([site, count]) => ({ site, count }))
+      .sort((a, b) => b.count - a.count),
+    score: computeScore({
+      thirdParties: thirdParties.length,
+      persistentThird: cookieList.filter((c) => c.party === "third" && c.persistent).length,
+      thirdStorage: storageSummary.thirdPartyOrigins,
+      fingerprint: state.canvas.fingerprints.size,
+      syncBounce: state.cookieSync.size + (state.bounceChain.length > 0 || state.redirectHops.some((h) => h.site !== state.pageSite) ? 1 : 0),
+      hijack: state.hijack.globals.size + state.hijack.websockets.size + detectPolling(state).length
+    })
   };
 }
 
@@ -1107,6 +1201,16 @@ browser.runtime.onMessage.addListener((msg, sender) => {
     onStorageReport(msg, sender);
   } else if (msg.type === "pageEvent" && msg.event) {
     onPageEvent(msg, sender);
+  } else if (msg.type === "getBlockList") {
+    return Promise.resolve([...blockList].sort());
+  } else if (msg.type === "blockSite" && msg.site) {
+    blockList.add(msg.site);
+    saveBlockList();
+    return Promise.resolve([...blockList].sort());
+  } else if (msg.type === "unblockSite" && msg.site) {
+    blockList.delete(msg.site);
+    saveBlockList();
+    return Promise.resolve([...blockList].sort());
   } else if (msg.type === "userInteraction") {
     // clique/tecla no frame principal: a página não é intermediária de bounce
     const tabId = sender.tab && sender.tab.id;

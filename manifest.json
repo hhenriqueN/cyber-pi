@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Privacy Guard",
-  "version": "0.6.0",
+  "version": "1.0.0",
   "description": "Detecta rastreadores, cookies, armazenamento HTML5, fingerprinting e indicadores de hijacking em páginas web.",
 
   "icons": {
@@ -11,8 +11,10 @@
 
   "permissions": [
     "webRequest",
+    "webRequestBlocking",
     "webNavigation",
     "cookies",
+    "storage",
     "tabs",
     "<all_urls>"
   ],
