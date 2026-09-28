@@ -22,6 +22,8 @@
 
 * { box-sizing: border-box; }
 
+html, body { overflow-x: hidden; }
+
 body {
   margin: 0;
   width: 400px;
@@ -122,3 +124,26 @@ ul { list-style: none; margin: 0; padding: 0; }
 .tag.first { color: var(--fg); background: var(--card); }
 .tag.persistent { color: var(--warn); border-color: var(--warn); }
 .tag.session { color: var(--muted); }
+.tag.written { color: var(--accent); border-color: var(--accent); }
+
+#storage-list > li {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin-top: 6px;
+}
+#storage-list .row { display: flex; justify-content: space-between; gap: 8px; }
+#storage-list .origin { font-weight: 600; word-break: break-all; }
+#storage-list .detail { color: var(--muted); font-size: 11px; }
+#storage-list details { margin-top: 4px; }
+#storage-list summary { cursor: pointer; font-size: 12px; }
+#storage-list .items li {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 11px;
+  padding: 2px 0;
+  border-bottom: 1px dotted var(--border);
+}
+#storage-list .items .k { word-break: break-all; }
+#storage-list .items .v { color: var(--muted); word-break: break-all; text-align: right; max-width: 55%; }

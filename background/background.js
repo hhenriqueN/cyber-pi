@@ -7,6 +7,8 @@
  *
  * Etapa 1: detecção de conexões a domínios de terceira parte.
  * Etapa 2: cookies injetados no carregamento (1ª/3ª parte, sessão/persistente).
+ * Etapa 3: armazenamento HTML5 (localStorage, sessionStorage, IndexedDB),
+ *          recebido do content script content/storage.js de cada frame.
  *
  * Regra de primeira x terceira parte:
  *   compara o domínio registrável (eTLD+1, via Public Suffix List / tldts)
@@ -74,6 +76,7 @@ function isWebUrl(url) {
  * @property {Map<string, ThirdPartyEntry>} thirdParties
  * @property {Map<string, CookieEntry>} cookies   chave: nome|domínio|path
  * @property {string|null} mainRequestId          requestId da navegação de topo
+ * @property {Map<string, StorageEntry>} storage  chave: origem do frame
  */
 
 function newTabState(pageUrl, mainRequestId = null) {
@@ -84,7 +87,8 @@ function newTabState(pageUrl, mainRequestId = null) {
     mainRequestId,
     requests: { total: 0, firstParty: 0, thirdParty: 0 },
     thirdParties: new Map(),
-    cookies: new Map()
+    cookies: new Map(),
+    storage: new Map()
   };
 }
 
@@ -360,6 +364,50 @@ browser.cookies.onChanged.addListener((change) => {
 });
 
 /* ------------------------------------------------------------------ */
+/* Armazenamento HTML5                                                 */
+/* ------------------------------------------------------------------ */
+/*
+ * Cada frame (inclusive iframes de terceira parte) envia o que encontrou na
+ * sua origem. Frames da mesma origem compartilham o armazenamento, então o
+ * relatório é agrupado por origem (o último envio é o estado mais recente).
+ *
+ * 1ª x 3ª parte: eTLD+1 da origem do frame comparado ao eTLD+1 da página.
+ * No Firefox, o armazenamento de um iframe de 3ª parte é PARTICIONADO pelo
+ * site de topo (State Partitioning): o mesmo iframe em outro site enxerga
+ * outro localStorage/IndexedDB.
+ */
+
+/**
+ * @typedef {Object} StorageEntry
+ * @property {string} origin
+ * @property {string} site
+ * @property {boolean} isTopFrame
+ * @property {Array} local       itens de localStorage
+ * @property {Array} session     itens de sessionStorage
+ * @property {Array} idb         bancos IndexedDB
+ */
+
+function onStorageReport(msg, sender) {
+  const tabId = sender.tab && sender.tab.id;
+  if (tabId === undefined || tabId < 0) return;
+  const state = tabs.get(tabId);
+  if (!state || !isWebUrl(msg.url)) return;
+
+  // Documento de topo de uma página anterior (navegação em andamento): descarta.
+  if (sender.frameId === 0 && siteOf(msg.url) !== state.pageSite) return;
+
+  const prev = state.storage.get(msg.origin);
+  state.storage.set(msg.origin, {
+    origin: msg.origin,
+    site: siteOf(msg.origin),
+    isTopFrame: sender.frameId === 0 || (prev && prev.isTopFrame) || false,
+    local: msg.report.local,
+    session: msg.report.session,
+    idb: msg.report.idb
+  });
+}
+
+/* ------------------------------------------------------------------ */
 /* Ciclo de vida das abas                                              */
 /* ------------------------------------------------------------------ */
 
@@ -420,19 +468,43 @@ function buildReport(tabId) {
     }
   };
 
+  const storageList = [...state.storage.values()]
+    .map((e) => ({ ...e, party: e.site === state.pageSite ? "first" : "third" }))
+    .filter((e) => e.local.length || e.session.length || e.idb.length)
+    .sort((a, b) =>
+      (a.party === b.party ? 0 : a.party === "first" ? -1 : 1) ||
+      a.origin.localeCompare(b.origin));
+
+  const sum = (fn) => storageList.reduce((n, e) => n + fn(e), 0);
+  const storageSummary = {
+    origins: storageList.length,
+    thirdPartyOrigins: storageList.filter((e) => e.party === "third").length,
+    local: sum((e) => e.local.length),
+    localWritten: sum((e) => e.local.filter((i) => i.writtenNow).length),
+    session: sum((e) => e.session.length),
+    sessionWritten: sum((e) => e.session.filter((i) => i.writtenNow).length),
+    idb: sum((e) => e.idb.length),
+    idbOpened: sum((e) => e.idb.filter((d) => d.openedNow).length)
+  };
+
   return {
     pageUrl: state.pageUrl,
     pageSite: state.pageSite,
     startedAt: state.startedAt,
     requests: { ...state.requests },
     thirdParties,
-    cookies: { summary: cookieSummary, list: cookieList }
+    cookies: { summary: cookieSummary, list: cookieList },
+    storage: { summary: storageSummary, list: storageList }
   };
 }
 
-browser.runtime.onMessage.addListener((msg) => {
-  if (msg && msg.type === "getTabReport") {
+browser.runtime.onMessage.addListener((msg, sender) => {
+  if (!msg) return undefined;
+  if (msg.type === "getTabReport") {
     return Promise.resolve(buildReport(msg.tabId));
+  }
+  if (msg.type === "storageReport") {
+    onStorageReport(msg, sender);
   }
   return undefined;
 });

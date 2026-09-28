@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Privacy Guard",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Detecta rastreadores, cookies, armazenamento HTML5, fingerprinting e indicadores de hijacking em páginas web.",
 
   "icons": {
@@ -22,6 +22,24 @@
       "background/background.js"
     ]
   },
+
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/page-hooks.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true,
+      "world": "MAIN"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/storage.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_about_blank": true
+    }
+  ],
 
   "browser_action": {
     "default_title": "Privacy Guard",

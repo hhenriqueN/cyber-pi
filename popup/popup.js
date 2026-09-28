@@ -89,6 +89,69 @@ function renderCookies(cookies) {
   }
 }
 
+const EMPTY_STORAGE = {
+  summary: { origins: 0, thirdPartyOrigins: 0, local: 0, localWritten: 0, session: 0, sessionWritten: 0, idb: 0, idbOpened: 0 },
+  list: []
+};
+
+function storageDetails(title, rows) {
+  const det = el("details");
+  det.append(el("summary", null, title));
+  const ul = el("ul", "items");
+  for (const r of rows) {
+    const li = el("li");
+    const k = el("span", "k mono", r.key);
+    if (r.written) k.append(" ", el("span", "tag written", "novo"));
+    li.append(k, el("span", "v mono", r.value));
+    ul.append(li);
+  }
+  det.append(ul);
+  return det;
+}
+
+function renderStorage(storage) {
+  const s = storage.summary;
+  $("n-storage-origins").textContent = s.origins;
+  $("n-storage-third").textContent = s.thirdPartyOrigins;
+  $("s-local").textContent = s.local;
+  $("s-local-w").textContent = s.localWritten;
+  $("s-session").textContent = s.session;
+  $("s-session-w").textContent = s.sessionWritten;
+  $("s-idb").textContent = s.idb;
+  $("s-idb-w").textContent = s.idbOpened;
+
+  const ul = $("storage-list");
+  ul.replaceChildren();
+  $("storage-empty").hidden = storage.list.length > 0;
+
+  for (const e of storage.list) {
+    const li = el("li");
+    const row = el("div", "row");
+    row.append(el("span", "origin mono", e.origin));
+    const tags = el("span", "tags");
+    tags.append(el("span", `tag ${e.party}`, e.party === "first" ? "1ª parte" : "3ª parte"));
+    if (e.party === "third") tags.append(el("span", "tag session", "particionado"));
+    row.append(tags);
+    li.append(row);
+
+    li.append(el("div", "detail",
+      `localStorage: ${e.local.length} · sessionStorage: ${e.session.length} · IndexedDB: ${e.idb.length}` +
+      (e.isTopFrame ? " · frame principal" : " · iframe")));
+
+    const toRows = (items) => items.map((i) => ({
+      key: i.key, value: `${i.preview} (${i.size} B)`, written: i.writtenNow
+    }));
+    if (e.local.length) li.append(storageDetails(`localStorage (${e.local.length})`, toRows(e.local)));
+    if (e.session.length) li.append(storageDetails(`sessionStorage (${e.session.length})`, toRows(e.session)));
+    if (e.idb.length) {
+      li.append(storageDetails(`IndexedDB (${e.idb.length})`, e.idb.map((d) => ({
+        key: d.name, value: d.openedNow ? "aberto neste carregamento" : "existente", written: d.openedNow
+      }))));
+    }
+    ul.append(li);
+  }
+}
+
 async function render() {
   const tabId = await getActiveTabId();
   const report = tabId === null
@@ -103,6 +166,7 @@ async function render() {
       summary: { total: 0, firstParty: 0, thirdParty: 0, session: 0, persistent: 0, bySource: { http: 0, js: 0 } },
       list: []
     });
+    renderStorage(EMPTY_STORAGE);
     return;
   }
 
@@ -113,6 +177,7 @@ async function render() {
   $("n-total-req").textContent = report.requests.total;
   renderThirdParties(report.thirdParties);
   renderCookies(report.cookies);
+  renderStorage(report.storage || EMPTY_STORAGE);
 }
 
 $("refresh").addEventListener("click", render);

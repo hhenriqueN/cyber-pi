@@ -9,7 +9,7 @@ Desenvolvida para a Avaliação Intermediária de Cibersegurança (Insper).
 |---|---|
 | Conexões a domínios de terceira parte (eTLD+1) | ✅ |
 | Cookies: 1ª/3ª parte, sessão/persistente | ✅ |
-| Armazenamento HTML5 (localStorage, sessionStorage, IndexedDB) | ⏳ |
+| Armazenamento HTML5 (localStorage, sessionStorage, IndexedDB) | ✅ |
 | Cookie sync / bounce tracking | ⏳ |
 | Canvas fingerprint | ⏳ |
 | Indicadores de hijacking/hook (WebSocket, polling, sobrescrita de globais) | ⏳ |
@@ -65,6 +65,32 @@ no passado) não contam como injeção.
 - **1ª × 3ª parte**: eTLD+1 do domínio do cookie comparado ao eTLD+1 da página final.
 - **Sessão × persistente**: sem `Expires`/`Max-Age` é de sessão; com data de expiração é persistente
   (`Max-Age` tem precedência sobre `Expires`, RFC 6265 §5.3).
+
+**Armazenamento HTML5:** o content script `content/storage.js` roda em **todos os frames**
+(inclusive iframes de terceira parte) em `document_start`, antes dos scripts da página, e reporta
+ao background o que existe na origem do frame:
+
+| Mecanismo | Vida útil | Escopo | Como é detectado |
+|---|---|---|---|
+| `localStorage` | persistente | por origem | snapshot + interceptação de `Storage.prototype.setItem` |
+| `sessionStorage` | até fechar a aba | por aba + origem | idem |
+| `IndexedDB` | persistente | por origem | `indexedDB.databases()` + interceptação de `IDBFactory.prototype.open` |
+
+- **Snapshot:** o estado lido antes dos scripts da página é a linha de base; chaves novas ou com valor
+  alterado nas releituras (a cada 2 s) foram **gravadas neste carregamento**. Pega qualquer forma de
+  escrita, inclusive `localStorage.x = ...`.
+- **Interceptação:** o content script roda num mundo isolado e não vê as chamadas da página; por isso
+  `content/page-hooks.js` é declarado com `"world": "MAIN"` (Firefox 128+) e roda no próprio contexto
+  da página, antes dos scripts dela. Ele substitui `setItem` e `indexedDB.open` por versões que chamam
+  a original (mesmo retorno e mesmas exceções) e avisam o content script por um `CustomEvent`.
+  Isso registra regravações com o mesmo valor e a abertura de bancos IndexedDB.
+- **Envio imediato:** iframes de rastreamento costumam gravar e ser removidos logo depois (é o que faz
+  a página *Storage blocking* do DuckDuckGo). Por isso, cada gravação é reportada na mesma tarefa
+  (microtask), antes que o frame possa ser destruído.
+- **Limitação:** por rodar no mundo da página, um script malicioso poderia detectar ou forjar os eventos
+  dos hooks; o snapshot (lido pelo mundo isolado) não é afetado.
+- **1ª × 3ª parte:** eTLD+1 da origem do frame comparado ao da página. No Firefox, o armazenamento de
+  iframes de 3ª parte é **particionado** pelo site de topo (State Partitioning).
 
 ## Estrutura
 
