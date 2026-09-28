@@ -158,3 +158,23 @@ ul { list-style: none; margin: 0; padding: 0; }
 #canvas-list .row { display: flex; justify-content: space-between; gap: 8px; }
 #canvas-list .script { font-weight: 600; word-break: break-all; }
 #canvas-list .detail { color: var(--muted); font-size: 11px; word-break: break-all; }
+
+
+#bounce-status.detected, #sync-status.detected { color: #d1242f; }
+#bounce-list li, #sync-list li, #passed-ids li, #param-list li {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+}
+#bounce-list li, #sync-list li { border-color: #d1242f; }
+#bounce-list .row, #sync-list .row, #param-list .row { display: flex; justify-content: space-between; gap: 8px; }
+#bounce-list .site, #sync-list .site, #param-list .name, #passed-ids .name { font-weight: 600; word-break: break-all; }
+#bounce-list .detail, #sync-list .detail, #param-list .detail, #passed-ids .detail {
+  color: var(--muted);
+  font-size: 11px;
+  word-break: break-all;
+}
+.tag.click { color: #fff; background: #d1242f; border-color: #d1242f; }
+.tag.email { color: var(--warn); border-color: var(--warn); }
+.tag.campaign { color: var(--muted); }

@@ -12,7 +12,7 @@ Desenvolvida para a Avaliação Intermediária de Cibersegurança (Insper).
 | Armazenamento HTML5 (localStorage, sessionStorage, IndexedDB) | ✅ |
 | Cookie sync / bounce tracking | ✅ |
 | Canvas fingerprint | ✅ |
-| Indicadores de hijacking/hook (WebSocket, polling, sobrescrita de globais) | ⏳ |
+| Indicadores de hijacking/hook (WebSocket, polling, sobrescrita de globais) | ✅ |
 | Pontuação de privacidade | ⏳ |
 | Lista de bloqueio personalizada | ⏳ |
 
@@ -122,6 +122,38 @@ devolver a janela do iframe à página, os hooks são instalados nela.
 
 **Limitações conhecidas:** código executado em **Web Workers** (inclusive `OffscreenCanvas` num worker) e
 acesso a iframes por índice (`window[0]`, `window.frames[0]`) não passam pelos hooks.
+
+**Cookie sync, bounce tracking e parâmetros de URL:** técnicas para contornar o bloqueio e o
+particionamento de cookies de terceira parte.
+
+- **Bounce tracking:** um clique leva a aba, por um instante, a um site rastreador, que passa a ser
+  **primeira parte**, grava cookie/storage e redireciona ao destino. Uma página é classificada como
+  intermediária de bounce quando, ao mesmo tempo:
+  1. o site (eTLD+1) muda na navegação seguinte;
+  2. **não houve interação do usuário** (clique ou tecla reais, `isTrusted`) na página;
+  3. ela foi deixada por redirect HTTP 30x (`webRequest.onBeforeRedirect`) **ou** ficou aberta **≤ 10 s**;
+  4. a navegação seguinte não foi digitada, favorito, recarga ou voltar/avançar (`webNavigation`).
+
+  O critério segue a *Bounce Tracking Protection* do Firefox. O tempo de permanência é usado porque o
+  Firefox **não informa** `client_redirect` em `webNavigation` quando o redirect é feito por JavaScript
+  (`location.href`), segundo a MDN. Cookies e storage gravados pela página intermediária são anotados
+  mesmo quando o evento chega depois da troca de página.
+- **ID repassado na URL:** após um bounce, os parâmetros da URL de destino são comparados com os valores
+  que o intermediário tinha em cookie/storage (evidência forte) ou com nomes típicos de identificador
+  (`uid`, `user_id`, `visitor`...).
+- **Cookie sync:** cada requisição de 3ª parte tem seus parâmetros de URL (inclusive URLs aninhadas)
+  analisados. Um token "com cara de ID" (≥ 8 caracteres, com dígitos, entropia ≥ 2,5 bits/caractere,
+  e que não seja timestamp) é reportado quando:
+  - pertence a um cookie/storage de **outro** site (ex.: `_ga` da página enviado a `google-analytics.com`
+    = ID de 1ª parte enviado a terceiro; `uuid2` de `adnxs.com` enviado a `rubiconproject.com` = terceiro
+    para terceiro);
+  - o mesmo token aparece em URLs de **dois ou mais** sites de 3ª parte diferentes.
+
+  Os valores dos cookies ficam só no background e nunca são enviados ao popup.
+- **Parâmetros de rastreamento:** a URL da página é comparada com uma lista de parâmetros conhecidos,
+  por categoria: **clique** (`fbclid`, `gclid`, `msclkid`... identificam o clique/usuário),
+  **e-mail** (`mc_eid`, `_hsenc`...) e **campanha** (`utm_*`, `fb_source`... atribuição, sem identificar
+  o usuário).
 
 ## Estrutura
 

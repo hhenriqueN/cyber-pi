@@ -7,6 +7,10 @@
  *
  * Os eventos de armazenamento (storage.*, idb.*) são tratados por
  * content/storage.js; aqui passam os demais (canvas.*).
+ *
+ * Também avisa o background da primeira interação real do usuário (clique ou
+ * tecla) no frame principal: uma página com interação não é tratada como
+ * intermediária de bounce tracking.
  */
 
 "use strict";
@@ -31,4 +35,15 @@
       event: data
     }).catch(() => {}); // background indisponível (extensão recarregada)
   });
+
+  if (window === window.top) {
+    const onInteraction = (ev) => {
+      if (!ev.isTrusted) return; // ignora eventos sintéticos disparados por script
+      window.removeEventListener("pointerdown", onInteraction, true);
+      window.removeEventListener("keydown", onInteraction, true);
+      browser.runtime.sendMessage({ type: "userInteraction", url: location.href }).catch(() => {});
+    };
+    window.addEventListener("pointerdown", onInteraction, true);
+    window.addEventListener("keydown", onInteraction, true);
+  }
 })();

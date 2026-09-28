@@ -192,6 +192,93 @@ function renderCanvas(canvas) {
   }
 }
 
+const EMPTY_TRACKING = {
+  bounce: { detected: false, trackers: [], hops: [], passedIds: [] },
+  trackingParams: [],
+  cookieSync: []
+};
+
+const SYNC_KIND_LABEL = {
+  "first-to-third": "ID de 1ª parte enviado a terceiro",
+  "third-to-third": "ID de terceiro enviado a outro terceiro",
+  "shared-id": "mesmo ID enviado a vários terceiros"
+};
+
+function renderTracking(t) {
+  // Bounce tracking
+  const b = t.bounce;
+  const bStatus = $("bounce-status");
+  bStatus.textContent = b.detected ? `DETECTADO (${b.trackers.join(", ")})` : "não detectado";
+  bStatus.className = b.detected ? "detected" : "";
+
+  const bl = $("bounce-list");
+  bl.replaceChildren();
+  for (const h of b.hops) {
+    const li = el("li");
+    const row = el("div", "row");
+    row.append(el("span", "site mono", h.host || h.site));
+    const tags = el("span", "tags");
+    tags.append(el("span", "tag third",
+      h.via === "server" ? `redirect HTTP ${h.statusCode || ""}`.trim() : "redirect por JS"));
+    row.append(tags);
+    li.append(row);
+    const parts = [];
+    if (h.via === "client") parts.push(`permaneceu ${h.dwellMs} ms sem interação do usuário`);
+    if (h.cookiesSet.length) parts.push(`gravou cookie(s): ${h.cookiesSet.join(", ")}`);
+    if (h.storageSet.length) parts.push(`gravou storage: ${h.storageSet.join(", ")}`);
+    if (parts.length) li.append(el("div", "detail", parts.join(" · ")));
+    li.append(el("div", "detail mono", h.url));
+    bl.append(li);
+  }
+
+  const pl = $("passed-ids");
+  pl.replaceChildren();
+  for (const p of b.passedIds) {
+    const li = el("li");
+    li.append(el("div", "name mono", `ID repassado na URL: ${p.name}=${p.value}`));
+    li.append(el("div", "detail", p.matches
+      ? `mesmo valor do ${p.matches}`
+      : "nome de parâmetro de identificador, após bounce"));
+    pl.append(li);
+  }
+
+  // Parâmetros de rastreamento
+  $("n-params").textContent = t.trackingParams.length;
+  const ql = $("param-list");
+  ql.replaceChildren();
+  for (const p of t.trackingParams) {
+    const li = el("li");
+    const row = el("div", "row");
+    row.append(el("span", "name mono", `${p.name}=${p.value}`));
+    const tags = el("span", "tags");
+    tags.append(el("span", `tag ${p.category}`, p.category === "click" ? "clique" : p.category === "email" ? "e-mail" : "campanha"));
+    row.append(tags);
+    li.append(row);
+    li.append(el("div", "detail", p.label));
+    ql.append(li);
+  }
+
+  // Cookie sync
+  const sStatus = $("sync-status");
+  sStatus.textContent = t.cookieSync.length ? `DETECTADO (${t.cookieSync.length})` : "não detectado";
+  sStatus.className = t.cookieSync.length ? "detected" : "";
+  const sl = $("sync-list");
+  sl.replaceChildren();
+  for (const e of t.cookieSync) {
+    const li = el("li");
+    const row = el("div", "row");
+    row.append(el("span", "site mono", e.fromSite ? `${e.fromSite} → ${e.toSite}` : e.toSite));
+    const tags = el("span", "tags");
+    tags.append(el("span", "tag third", `${e.count}×`));
+    row.append(tags);
+    li.append(row);
+    const origin = e.kind === "shared-id" ? "" : ` · origem: ${e.source}`;
+    li.append(el("div", "detail", `${SYNC_KIND_LABEL[e.kind] || e.kind}${origin} · parâmetro "${e.param}" = ${e.token}`));
+    li.append(el("div", "detail mono", e.url));
+    sl.append(li);
+  }
+}
+
 async function render() {
   const tabId = await getActiveTabId();
   const report = tabId === null
@@ -208,6 +295,7 @@ async function render() {
     });
     renderStorage(EMPTY_STORAGE);
     renderCanvas(EMPTY_CANVAS);
+    renderTracking(EMPTY_TRACKING);
     return;
   }
 
@@ -220,6 +308,7 @@ async function render() {
   renderCookies(report.cookies);
   renderStorage(report.storage || EMPTY_STORAGE);
   renderCanvas(report.canvas || EMPTY_CANVAS);
+  renderTracking(report.tracking || EMPTY_TRACKING);
 }
 
 $("refresh").addEventListener("click", render);
