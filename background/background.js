@@ -9,6 +9,8 @@
  * Etapa 2: cookies injetados no carregamento (1ª/3ª parte, sessão/persistente).
  * Etapa 3: armazenamento HTML5 (localStorage, sessionStorage, IndexedDB),
  *          recebido do content script content/storage.js de cada frame.
+ * Etapa 4: canvas fingerprint, recebido de content/page-hooks.js via
+ *          content/bridge.js.
  *
  * Regra de primeira x terceira parte:
  *   compara o domínio registrável (eTLD+1, via Public Suffix List / tldts)
@@ -77,6 +79,7 @@ function isWebUrl(url) {
  * @property {Map<string, CookieEntry>} cookies   chave: nome|domínio|path
  * @property {string|null} mainRequestId          requestId da navegação de topo
  * @property {Map<string, StorageEntry>} storage  chave: origem do frame
+ * @property {{fingerprints: Map<string, Object>, benignReads: number}} canvas
  */
 
 function newTabState(pageUrl, mainRequestId = null) {
@@ -88,7 +91,8 @@ function newTabState(pageUrl, mainRequestId = null) {
     requests: { total: 0, firstParty: 0, thirdParty: 0 },
     thirdParties: new Map(),
     cookies: new Map(),
-    storage: new Map()
+    storage: new Map(),
+    canvas: { fingerprints: new Map(), benignReads: 0 }
   };
 }
 
@@ -408,6 +412,52 @@ function onStorageReport(msg, sender) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Eventos do mundo da página (canvas)                                 */
+/* ------------------------------------------------------------------ */
+/*
+ * canvas.fingerprint: leitura de canvas que atende a todos os critérios da
+ *   heurística (ver content/page-hooks.js). Agrupada por script + método.
+ * canvas.read: leitura de canvas que NÃO atende (uso provavelmente legítimo);
+ *   apenas contada, para mostrar que o canvas foi usado sem fingerprint.
+ */
+
+function onPageEvent(msg, sender) {
+  const tabId = sender.tab && sender.tab.id;
+  if (tabId === undefined || tabId < 0) return;
+  const state = tabs.get(tabId);
+  if (!state || !isWebUrl(msg.url)) return;
+  if (sender.frameId === 0 && siteOf(msg.url) !== state.pageSite) return;
+
+  const ev = msg.event;
+  if (ev.type === "canvas.read") {
+    state.canvas.benignReads++;
+    return;
+  }
+  if (ev.type !== "canvas.fingerprint") return;
+
+  const script = typeof ev.script === "string" ? ev.script : msg.url;
+  const key = `${script}|${ev.method}`;
+  const existing = state.canvas.fingerprints.get(key);
+  if (existing) {
+    existing.count++;
+    return;
+  }
+  state.canvas.fingerprints.set(key, {
+    script,
+    scriptSite: siteOf(script),
+    frameOrigin: msg.origin,
+    method: ev.method,
+    width: ev.width,
+    height: ev.height,
+    distinctChars: ev.distinctChars,
+    colors: ev.colors,
+    textSample: ev.textSample,
+    criteria: ev.criteria,
+    count: 1
+  });
+}
+
+/* ------------------------------------------------------------------ */
 /* Ciclo de vida das abas                                              */
 /* ------------------------------------------------------------------ */
 
@@ -494,7 +544,12 @@ function buildReport(tabId) {
     requests: { ...state.requests },
     thirdParties,
     cookies: { summary: cookieSummary, list: cookieList },
-    storage: { summary: storageSummary, list: storageList }
+    storage: { summary: storageSummary, list: storageList },
+    canvas: {
+      fingerprints: [...state.canvas.fingerprints.values()]
+        .map((f) => ({ ...f, party: f.scriptSite === state.pageSite ? "first" : "third" })),
+      benignReads: state.canvas.benignReads
+    }
   };
 }
 
@@ -505,6 +560,8 @@ browser.runtime.onMessage.addListener((msg, sender) => {
   }
   if (msg.type === "storageReport") {
     onStorageReport(msg, sender);
+  } else if (msg.type === "pageEvent" && msg.event) {
+    onPageEvent(msg, sender);
   }
   return undefined;
 });

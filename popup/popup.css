@@ -147,3 +147,14 @@ ul { list-style: none; margin: 0; padding: 0; }
 }
 #storage-list .items .k { word-break: break-all; }
 #storage-list .items .v { color: var(--muted); word-break: break-all; text-align: right; max-width: 55%; }
+
+#canvas-status.detected { color: #d1242f; }
+#canvas-list li {
+  border: 1px solid #d1242f;
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+}
+#canvas-list .row { display: flex; justify-content: space-between; gap: 8px; }
+#canvas-list .script { font-weight: 600; word-break: break-all; }
+#canvas-list .detail { color: var(--muted); font-size: 11px; word-break: break-all; }

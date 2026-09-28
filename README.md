@@ -10,8 +10,8 @@ Desenvolvida para a Avaliação Intermediária de Cibersegurança (Insper).
 | Conexões a domínios de terceira parte (eTLD+1) | ✅ |
 | Cookies: 1ª/3ª parte, sessão/persistente | ✅ |
 | Armazenamento HTML5 (localStorage, sessionStorage, IndexedDB) | ✅ |
-| Cookie sync / bounce tracking | ⏳ |
-| Canvas fingerprint | ⏳ |
+| Cookie sync / bounce tracking | ✅ |
+| Canvas fingerprint | ✅ |
 | Indicadores de hijacking/hook (WebSocket, polling, sobrescrita de globais) | ⏳ |
 | Pontuação de privacidade | ⏳ |
 | Lista de bloqueio personalizada | ⏳ |
@@ -91,6 +91,37 @@ ao background o que existe na origem do frame:
   dos hooks; o snapshot (lido pelo mundo isolado) não é afetado.
 - **1ª × 3ª parte:** eTLD+1 da origem do frame comparado ao da página. No Firefox, o armazenamento de
   iframes de 3ª parte é **particionado** pelo site de topo (State Partitioning).
+
+**Canvas fingerprint:** `content/page-hooks.js` (mundo da página) intercepta `fillText`, `strokeText`,
+`save`, `restore`, `drawImage`, `getImageData`, `toDataURL`, `toBlob` e, para `OffscreenCanvas`,
+`convertToBlob` e `transferToImageBitmap`. A cada extração de imagem, aplica a heurística de
+Englehardt & Narayanan (2016, *Online Tracking: A 1-million-site Measurement and Analysis*, ACM CCS, §6.1).
+A leitura é classificada como fingerprint quando **todos** os critérios são atendidos:
+
+| Critério | Condição | Por quê |
+|---|---|---|
+| C1 | canvas com largura e altura ≥ 16 px | canvas minúsculos não geram entropia suficiente |
+| C2 | texto escrito com ≥ 2 cores **ou** ≥ 10 caracteres distintos | a renderização de fontes/antialiasing é a principal fonte de variação entre máquinas |
+| C3 | nenhum `save`/`restore`/`addEventListener` no canvas | indicam uso interativo legítimo (editor, jogo, gráfico) |
+| C4 | extração via `toDataURL`/`toBlob`/`convertToBlob` ou `getImageData` com área ≥ 16×16 | é a leitura dos pixels que gera o identificador |
+| C5 | formato sem perda (não `image/jpeg`/`image/webp`) | compressão com perda destrói as diferenças sutis |
+
+Quando o desenho é copiado entre canvases (`drawImage`, inclusive de `OffscreenCanvas` via `ImageBitmap`),
+as informações de texto da origem são herdadas pelo destino, para que a leitura final seja avaliada
+corretamente. O script responsável é identificado pela pilha de chamadas (`Error().stack`) e classificado
+como 1ª ou 3ª parte. Leituras que não atendem aos critérios são apenas contadas (uso provavelmente legítimo).
+A heurística cobre canvas 2D; leituras de canvas WebGL não são classificadas.
+
+
+**Iframes "limpos":** cada iframe tem os seus próprios protótipos (`HTMLCanvasElement.prototype` etc.).
+Scripts de fingerprint podem criar um iframe `about:blank` e usar as funções dele, que o navegador não
+chegou a instrumentar. O BrowserLeaks faz exatamente isso
+(`document.querySelector("#canvas-iframe").contentDocument.createElement("canvas")`). Por isso, os getters
+`contentWindow` e `contentDocument` de `iframe`, `frame` e `object` também são interceptados: antes de
+devolver a janela do iframe à página, os hooks são instalados nela.
+
+**Limitações conhecidas:** código executado em **Web Workers** (inclusive `OffscreenCanvas` num worker) e
+acesso a iframes por índice (`window[0]`, `window.frames[0]`) não passam pelos hooks.
 
 ## Estrutura
 

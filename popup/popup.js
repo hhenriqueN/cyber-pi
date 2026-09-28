@@ -152,6 +152,46 @@ function renderStorage(storage) {
   }
 }
 
+const EMPTY_CANVAS = { fingerprints: [], benignReads: 0 };
+
+const CRITERIA_LABELS = {
+  c1_size: "C1 tamanho ≥16×16",
+  c2_text: "C2 texto (≥2 cores ou ≥10 caracteres)",
+  c3_not_interactive: "C3 sem save/restore/eventos",
+  c4_extraction: "C4 extração da imagem",
+  c5_lossless: "C5 formato sem perda"
+};
+
+function renderCanvas(canvas) {
+  const n = canvas.fingerprints.length;
+  const status = $("canvas-status");
+  status.textContent = n > 0 ? `DETECTADO (${n})` : "não detectado";
+  status.className = n > 0 ? "detected" : "";
+  $("canvas-benign").textContent = canvas.benignReads;
+
+  const ul = $("canvas-list");
+  ul.replaceChildren();
+  for (const f of canvas.fingerprints) {
+    const li = el("li");
+    const row = el("div", "row");
+    row.append(el("span", "script mono", f.script));
+    const tags = el("span", "tags");
+    tags.append(el("span", `tag ${f.party}`, f.party === "first" ? "1ª parte" : "3ª parte"));
+    row.append(tags);
+    li.append(row);
+
+    li.append(el("div", "detail",
+      `${f.method}() · canvas ${f.width}×${f.height} · ${f.distinctChars} caracteres distintos · ` +
+      `${f.colors} cor(es) · ${f.count} leitura(s)`));
+    if (f.textSample) li.append(el("div", "detail mono", `texto: "${f.textSample}"`));
+    const met = Object.entries(f.criteria || {})
+      .map(([k, v]) => `${v ? "✔" : "✘"} ${CRITERIA_LABELS[k] || k}`)
+      .join(" · ");
+    li.append(el("div", "detail", met));
+    ul.append(li);
+  }
+}
+
 async function render() {
   const tabId = await getActiveTabId();
   const report = tabId === null
@@ -167,6 +207,7 @@ async function render() {
       list: []
     });
     renderStorage(EMPTY_STORAGE);
+    renderCanvas(EMPTY_CANVAS);
     return;
   }
 
@@ -178,6 +219,7 @@ async function render() {
   renderThirdParties(report.thirdParties);
   renderCookies(report.cookies);
   renderStorage(report.storage || EMPTY_STORAGE);
+  renderCanvas(report.canvas || EMPTY_CANVAS);
 }
 
 $("refresh").addEventListener("click", render);
