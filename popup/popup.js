@@ -40,6 +40,55 @@ function renderThirdParties(list) {
   }
 }
 
+function formatExpiry(ms) {
+  if (!ms) return "";
+  const days = Math.round((ms - Date.now()) / 86400000);
+  const date = new Date(ms).toLocaleDateString("pt-BR");
+  return days >= 1 ? `expira em ${date} (~${days} dias)` : `expira em ${date}`;
+}
+
+function renderCookies(cookies) {
+  const s = cookies.summary;
+  const list = cookies.list;
+  const count = (party, persistent) =>
+    list.filter((c) => c.party === party && c.persistent === persistent).length;
+
+  $("n-cookies").textContent = s.total;
+  $("c-first-session").textContent = count("first", false);
+  $("c-first-persistent").textContent = count("first", true);
+  $("c-first").textContent = s.firstParty;
+  $("c-third-session").textContent = count("third", false);
+  $("c-third-persistent").textContent = count("third", true);
+  $("c-third").textContent = s.thirdParty;
+  $("c-session").textContent = s.session;
+  $("c-persistent").textContent = s.persistent;
+  $("c-total").textContent = s.total;
+  $("c-http").textContent = s.bySource.http;
+  $("c-js").textContent = s.bySource.js;
+
+  const ul = $("cookie-list");
+  ul.replaceChildren();
+  $("cookies-empty").hidden = list.length > 0;
+
+  for (const c of list) {
+    const li = el("li");
+    const row = el("div", "row");
+    row.append(el("span", "name mono", c.name || "(sem nome)"));
+    const tags = el("span", "tags");
+    tags.append(el("span", `tag ${c.party}`, c.party === "first" ? "1ª parte" : "3ª parte"));
+    tags.append(el("span", `tag ${c.persistent ? "persistent" : "session"}`,
+      c.persistent ? "persistente" : "sessão"));
+    row.append(tags);
+    li.append(row);
+
+    const origin = c.source === "http" ? "Set-Cookie" : "document.cookie";
+    const parts = [`${c.domain}${c.path}`, origin];
+    if (c.persistent) parts.push(formatExpiry(c.expires));
+    li.append(el("div", "detail mono", parts.join(" · ")));
+    ul.append(li);
+  }
+}
+
 async function render() {
   const tabId = await getActiveTabId();
   const report = tabId === null
@@ -50,6 +99,10 @@ async function render() {
   if (!report) {
     $("page-site").textContent = "—";
     renderThirdParties([]);
+    renderCookies({
+      summary: { total: 0, firstParty: 0, thirdParty: 0, session: 0, persistent: 0, bySource: { http: 0, js: 0 } },
+      list: []
+    });
     return;
   }
 
@@ -59,6 +112,7 @@ async function render() {
   $("n-third-req").textContent = report.requests.thirdParty;
   $("n-total-req").textContent = report.requests.total;
   renderThirdParties(report.thirdParties);
+  renderCookies(report.cookies);
 }
 
 $("refresh").addEventListener("click", render);

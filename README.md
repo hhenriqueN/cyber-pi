@@ -8,7 +8,7 @@ Desenvolvida para a Avaliação Intermediária de Cibersegurança (Insper).
 | Funcionalidade | Status |
 |---|---|
 | Conexões a domínios de terceira parte (eTLD+1) | ✅ |
-| Cookies: 1ª/3ª parte, sessão/persistente | ⏳ |
+| Cookies: 1ª/3ª parte, sessão/persistente | ✅ |
 | Armazenamento HTML5 (localStorage, sessionStorage, IndexedDB) | ⏳ |
 | Cookie sync / bounce tracking | ⏳ |
 | Canvas fingerprint | ⏳ |
@@ -50,6 +50,21 @@ Para que o próprio Firefox não bloqueie rastreadores antes de a extensão obse
 [tldts](https://github.com/remusao/tldts)) difere do eTLD+1 da página de topo da aba.
 Exemplo: `img.globo.com` e `g1.globo.com` são o mesmo site (`globo.com`); `a.exemplo.com.br` e
 `b.outro.com.br` não são, pois `com.br` é um sufixo público.
+
+**Cookies injetados no carregamento:** todo cookie gravado entre o início da navegação de topo
+(incluindo saltos de redirecionamento) e o momento da consulta. Dois caminhos são capturados:
+
+- **HTTP**: cabeçalho `Set-Cookie` em qualquer resposta da aba (`webRequest.onHeadersReceived`);
+- **JavaScript**: `document.cookie` (`cookies.onChanged`). Como esse evento não informa a aba, o cookie
+  é atribuído às abas cuja página é do mesmo site que o cookie ou cujo site é o topo da partição
+  do cookie (`partitionKey.topLevelSite`, Total Cookie Protection).
+
+Cada cookie (nome + domínio + path) é contado uma vez. Comandos de remoção (`Max-Age<=0` ou `Expires`
+no passado) não contam como injeção.
+
+- **1ª × 3ª parte**: eTLD+1 do domínio do cookie comparado ao eTLD+1 da página final.
+- **Sessão × persistente**: sem `Expires`/`Max-Age` é de sessão; com data de expiração é persistente
+  (`Max-Age` tem precedência sobre `Expires`, RFC 6265 §5.3).
 
 ## Estrutura
 

@@ -28,6 +28,23 @@
     <ul id="third-list"></ul>
   </section>
 
+  <section>
+    <h2>Cookies injetados no carregamento: <span id="n-cookies">0</span></h2>
+    <table class="matrix">
+      <thead>
+        <tr><th></th><th>Sessão</th><th>Persistente</th><th>Total</th></tr>
+      </thead>
+      <tbody>
+        <tr><th>1ª parte</th><td id="c-first-session">0</td><td id="c-first-persistent">0</td><td id="c-first">0</td></tr>
+        <tr><th>3ª parte</th><td id="c-third-session">0</td><td id="c-third-persistent">0</td><td id="c-third">0</td></tr>
+        <tr class="total"><th>Total</th><td id="c-session">0</td><td id="c-persistent">0</td><td id="c-total">0</td></tr>
+      </tbody>
+    </table>
+    <p class="muted small">Origem: <span id="c-http">0</span> via cabeçalho HTTP Set-Cookie, <span id="c-js">0</span> via JavaScript (document.cookie)</p>
+    <p id="cookies-empty" class="muted" hidden>Nenhum cookie injetado neste carregamento.</p>
+    <ul id="cookie-list"></ul>
+  </section>
+
   <p id="no-data" class="muted" hidden>
     Sem dados para esta aba. Recarregue a página (F5) com a extensão ativa.
   </p>
