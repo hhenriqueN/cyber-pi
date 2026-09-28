@@ -178,3 +178,30 @@ ul { list-style: none; margin: 0; padding: 0; }
 .tag.click { color: #fff; background: #d1242f; border-color: #d1242f; }
 .tag.email { color: var(--warn); border-color: var(--warn); }
 .tag.campaign { color: var(--muted); }
+
+
+#hijack-status.detected { color: #d1242f; }
+#globals-list li, #ws-list li, #poll-list li {
+  border: 1px solid #d1242f;
+  border-radius: 6px;
+  padding: 6px 8px;
+  margin-bottom: 4px;
+}
+#globals-list .row, #ws-list .row, #poll-list .row { display: flex; justify-content: space-between; gap: 8px; }
+#globals-list .api, #ws-list .site, #poll-list .site { font-weight: 600; word-break: break-all; }
+#globals-list .detail, #ws-list .detail, #poll-list .detail {
+  color: var(--muted);
+  font-size: 11px;
+  word-break: break-all;
+}
+#globals-list pre {
+  margin: 4px 0 0;
+  padding: 4px;
+  background: var(--card);
+  border-radius: 4px;
+  font-size: 10px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 80px;
+  overflow: auto;
+}

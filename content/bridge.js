@@ -6,7 +6,7 @@
  * escuta esses eventos e os repassa ao background com browser.runtime.
  *
  * Os eventos de armazenamento (storage.*, idb.*) são tratados por
- * content/storage.js; aqui passam os demais (canvas.*).
+ * content/storage.js; aqui passam os demais (canvas.*, hook.*).
  *
  * Também avisa o background da primeira interação real do usuário (clique ou
  * tecla) no frame principal: uma página com interação não é tratada como
@@ -17,7 +17,7 @@
 
 (() => {
   const EVENT_NAME = "__privacy_guard_event__";
-  const FORWARDED = /^canvas\./;
+    const FORWARDED = /^(canvas|hook)\./;
 
   document.addEventListener(EVENT_NAME, (ev) => {
     let data;

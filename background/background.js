@@ -13,6 +13,9 @@
  *          content/bridge.js.
  * Etapa 5: sincronismo de cookies (cookie sync), bounce tracking e
  *          parâmetros de rastreamento em URLs.
+ * Etapa 6: indicadores de sequestro de navegador (hijacking/hook): APIs
+ *          nativas sobrescritas, WebSocket e polling persistente para
+ *          domínios de terceira parte.
  *
  * Regra de primeira x terceira parte:
  *   compara o domínio registrável (eTLD+1, via Public Suffix List / tldts)
@@ -89,6 +92,7 @@ function isWebUrl(url) {
  * @property {Map<string, Object>} idTokens       token de ID -> dono (cookie/storage)
  * @property {Map<string, Set<string>>} tokenSites token de ID -> sites que o receberam
  * @property {Map<string, Object>} cookieSync     eventos de sincronismo
+ * @property {{globals: Map, websockets: Map, endpoints: Map}} hijack
  */
 
 function newTabState(pageUrl, mainRequestId = null) {
@@ -108,7 +112,8 @@ function newTabState(pageUrl, mainRequestId = null) {
     bounceChain: [],
     idTokens: new Map(),
     tokenSites: new Map(),
-    cookieSync: new Map()
+    cookieSync: new Map(),
+    hijack: { globals: new Map(), websockets: new Map(), endpoints: new Map() }
   };
 }
 
@@ -172,6 +177,7 @@ function onBeforeRequest(details) {
   }
 
   state.requests.thirdParty++;
+  recordPersistentChannel(state, details, reqSite);
   let entry = state.thirdParties.get(reqSite);
   if (!entry) {
     entry = {
@@ -473,6 +479,22 @@ function onPageEvent(msg, sender) {
   if (sender.frameId === 0 && siteOf(msg.url) !== state.pageSite) return;
 
   const ev = msg.event;
+  if (ev.type === "hook.global") {
+    const key = `${msg.origin}|${ev.api}`;
+    if (!state.hijack.globals.has(key)) {
+      state.hijack.globals.set(key, {
+        api: String(ev.api),
+        change: String(ev.change || "substituída"),
+        replacementIsNative: !!ev.replacementIsNative,
+        source: String(ev.source || "").slice(0, 150),
+        afterMs: Number(ev.afterMs) || 0,
+        frameOrigin: msg.origin,
+        frameSite: siteOf(msg.origin),
+        topFrame: sender.frameId === 0
+      });
+    }
+    return;
+  }
   if (ev.type === "canvas.read") {
     state.canvas.benignReads++;
     return;
@@ -889,6 +911,93 @@ function buildTrackingReport(state) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Hijacking / hook: canais persistentes com terceiros                 */
+/* ------------------------------------------------------------------ */
+/*
+ * Um navegador "fisgado" (ex.: hook.js do BeEF injetado via XSS) mantém um
+ * canal de comando e controle com o servidor do atacante:
+ *   - WebSocket: conexão bidirecional aberta (webRequest, tipo "websocket");
+ *   - polling: requisições repetidas ao MESMO endpoint em intervalos
+ *     regulares (o BeEF consulta o servidor a cada ~1 s por padrão).
+ * Critério de polling para um endpoint de 3ª parte (host + caminho, sem a
+ * query string, que costuma mudar a cada chamada):
+ *   >= POLL_MIN_REQUESTS requisições, intervalo médio entre 0,5 s e 60 s e
+ *   coeficiente de variação dos intervalos <= 0,35 (regularidade).
+ * Analytics com "heartbeat" periódico (ex.: medição de tempo de leitura)
+ * também atende ao critério: é um canal persistente legítimo, mas com o
+ * mesmo formato técnico, por isso é reportado como indicador.
+ */
+
+const POLL_MIN_REQUESTS = 4;
+const POLL_MIN_MEAN_MS = 500;
+const POLL_MAX_MEAN_MS = 60000;
+const POLL_MAX_CV = 0.35;
+const POLL_KEEP = 30;
+const MAX_ENDPOINTS = 2000;
+
+function recordPersistentChannel(state, details, reqSite) {
+  let u;
+  try { u = new URL(details.url); } catch (e) { return; }
+
+  if (details.type === "websocket" || /^wss?:$/.test(u.protocol)) {
+    const key = u.host + u.pathname;
+    const ws = state.hijack.websockets.get(key);
+    if (ws) {
+      ws.count++;
+    } else {
+      state.hijack.websockets.set(key, { url: details.url.slice(0, 160), site: reqSite, count: 1 });
+    }
+    return;
+  }
+
+  const key = u.host + u.pathname;
+  let ep = state.hijack.endpoints.get(key);
+  if (!ep) {
+    if (state.hijack.endpoints.size >= MAX_ENDPOINTS) return;
+    ep = { endpoint: key, site: reqSite, types: new Set(), times: [] };
+    state.hijack.endpoints.set(key, ep);
+  }
+  ep.types.add(details.type);
+  ep.times.push(details.timeStamp || Date.now());
+  if (ep.times.length > POLL_KEEP) ep.times.shift();
+}
+
+/** Endpoints com padrão de polling (intervalos regulares). */
+function detectPolling(state) {
+  const out = [];
+  for (const ep of state.hijack.endpoints.values()) {
+    if (ep.times.length < POLL_MIN_REQUESTS) continue;
+    const gaps = [];
+    for (let i = 1; i < ep.times.length; i++) gaps.push(ep.times[i] - ep.times[i - 1]);
+    const mean = gaps.reduce((a, b) => a + b, 0) / gaps.length;
+    if (mean < POLL_MIN_MEAN_MS || mean > POLL_MAX_MEAN_MS) continue;
+    const sd = Math.sqrt(gaps.reduce((a, g) => a + (g - mean) ** 2, 0) / gaps.length);
+    const cv = sd / mean;
+    if (cv > POLL_MAX_CV) continue;
+    out.push({
+      endpoint: ep.endpoint,
+      site: ep.site,
+      requests: ep.times.length,
+      meanIntervalMs: Math.round(mean),
+      regularity: Math.round((1 - cv) * 100), // 100% = intervalos idênticos
+      types: [...ep.types].sort()
+    });
+  }
+  return out.sort((a, b) => a.meanIntervalMs - b.meanIntervalMs);
+}
+
+function buildHijackReport(state) {
+  const globals = [...state.hijack.globals.values()]
+    .map((g) => ({ ...g, party: g.frameSite === state.pageSite ? "first" : "third" }))
+    .sort((a, b) => a.afterMs - b.afterMs);
+  return {
+    globals,
+    websockets: [...state.hijack.websockets.values()],
+    polling: detectPolling(state)
+  };
+}
+
+/* ------------------------------------------------------------------ */
 /* Ciclo de vida das abas                                              */
 /* ------------------------------------------------------------------ */
 
@@ -984,7 +1093,8 @@ function buildReport(tabId) {
       benignReads: state.canvas.benignReads
     },
     navigation: state.navigation,
-    tracking: buildTrackingReport(state)
+    tracking: buildTrackingReport(state),
+    hijack: buildHijackReport(state)
   };
 }
 

@@ -279,6 +279,66 @@ function renderTracking(t) {
   }
 }
 
+const EMPTY_HIJACK = { globals: [], websockets: [], polling: [] };
+
+function renderHijack(h) {
+  const total = h.globals.length + h.websockets.length + h.polling.length;
+  const status = $("hijack-status");
+  status.textContent = total ? `${total} indicador(es)` : "nenhum indicador";
+  status.className = total ? "detected" : "";
+
+  $("n-globals").textContent = h.globals.length;
+  const gl = $("globals-list");
+  gl.replaceChildren();
+  for (const g of h.globals) {
+    const li = el("li");
+    const row = el("div", "row");
+    row.append(el("span", "api mono", g.api));
+    const tags = el("span", "tags");
+    tags.append(el("span", `tag ${g.party}`, g.party === "first" ? "1ª parte" : "3ª parte"));
+    row.append(tags);
+    li.append(row);
+    li.append(el("div", "detail",
+      `${g.change} ${Math.round(g.afterMs / 100) / 10} s após o início · ` +
+      (g.replacementIsNative ? "substituta parece nativa (possível ocultação)" : "substituta é código JavaScript") +
+      (g.topFrame ? "" : ` · no iframe ${g.frameOrigin}`)));
+    li.append(el("pre", "mono", g.source));
+    gl.append(li);
+  }
+
+  $("n-ws").textContent = h.websockets.length;
+  const wl = $("ws-list");
+  wl.replaceChildren();
+  for (const w of h.websockets) {
+    const li = el("li");
+    const row = el("div", "row");
+    row.append(el("span", "site mono", w.site));
+    const tags = el("span", "tags");
+    tags.append(el("span", "tag third", `${w.count} conexão(ões)`));
+    row.append(tags);
+    li.append(row);
+    li.append(el("div", "detail mono", w.url));
+    wl.append(li);
+  }
+
+  $("n-poll").textContent = h.polling.length;
+  const pl = $("poll-list");
+  pl.replaceChildren();
+  for (const p of h.polling) {
+    const li = el("li");
+    const row = el("div", "row");
+    row.append(el("span", "site mono", p.site));
+    const tags = el("span", "tags");
+    tags.append(el("span", "tag third", `a cada ~${(p.meanIntervalMs / 1000).toFixed(1)} s`));
+    row.append(tags);
+    li.append(row);
+    li.append(el("div", "detail",
+      `${p.requests} requisições · regularidade ${p.regularity}% · tipos: ${p.types.join(", ")}`));
+    li.append(el("div", "detail mono", p.endpoint));
+    pl.append(li);
+  }
+}
+
 async function render() {
   const tabId = await getActiveTabId();
   const report = tabId === null
@@ -296,6 +356,7 @@ async function render() {
     renderStorage(EMPTY_STORAGE);
     renderCanvas(EMPTY_CANVAS);
     renderTracking(EMPTY_TRACKING);
+    renderHijack(EMPTY_HIJACK);
     return;
   }
 
@@ -309,6 +370,7 @@ async function render() {
   renderStorage(report.storage || EMPTY_STORAGE);
   renderCanvas(report.canvas || EMPTY_CANVAS);
   renderTracking(report.tracking || EMPTY_TRACKING);
+  renderHijack(report.hijack || EMPTY_HIJACK);
 }
 
 $("refresh").addEventListener("click", render);

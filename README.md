@@ -13,7 +13,7 @@ Desenvolvida para a Avaliação Intermediária de Cibersegurança (Insper).
 | Cookie sync / bounce tracking | ✅ |
 | Canvas fingerprint | ✅ |
 | Indicadores de hijacking/hook (WebSocket, polling, sobrescrita de globais) | ✅ |
-| Pontuação de privacidade | ⏳ |
+| Pontuação de privacidade | ✅ |
 | Lista de bloqueio personalizada | ⏳ |
 
 ## Como instalar (about:debugging)

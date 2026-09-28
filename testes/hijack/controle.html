@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Controle negativo (sem hook)</title>
+  <style>body { font: 15px/1.5 system-ui, sans-serif; max-width: 760px; margin: 2rem auto; padding: 0 1rem; }</style>
+</head>
+<body>
+  <h1>Controle negativo</h1>
+  <p>Mesma página, sem o hook. O Privacy Guard não deve apontar nenhum indicador de hijacking aqui.</p>
+  <form>
+    <label>Usuário <input name="user"></label>
+    <label>Senha <input name="pass" type="password"></label>
+  </form>
+  <canvas id="c" width="200" height="40"></canvas>
+  <script>
+    // Uso normal de APIs (inclusive as que a extensão instrumenta): não é hijacking.
+    localStorage.setItem("preferencia", "tema-claro");
+    const ctx = document.getElementById("c").getContext("2d");
+    ctx.fillText("gráfico legítimo", 5, 20);
+    document.querySelector("input").addEventListener("keydown", () => {});
+    fetch("controle.html", { cache: "no-store" });
+  </script>
+</body>
+</html>

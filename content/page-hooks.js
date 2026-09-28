@@ -21,6 +21,12 @@
  * contentDocument de iframes, frames e objects são interceptados: antes de
  * devolver a janela do iframe à página, os hooks são instalados nela.
  *
+ * Hijacking/hook: depois de instalar os NOSSOS hooks e antes de qualquer
+ * script da página, é tirado um retrato das APIs críticas (fetch,
+ * XMLHttpRequest, addEventListener, document.write...). Releituras
+ * periódicas comparam o estado atual com o retrato: qualquer diferença foi
+ * feita pela página (ou por outra extensão), nunca por nós.
+ *
  * Limitações documentadas no README: código em Web Workers e acesso a
  * iframes por índice (window[0], window.frames[0]) não passam pelos hooks;
  * e, por rodar no mundo da página, um script malicioso poderia detectar ou
@@ -32,6 +38,13 @@
 
   const EVENT_NAME = "__privacy_guard_event__";
   const HOOKED = Symbol.for("privacy-guard.hooked"); // marca por janela (evita hooks duplicados)
+
+  // Referências guardadas ANTES de qualquer script da página: se a página
+  // sobrescrever estas funções, o detector continua usando as originais.
+  const nativeToString = Function.prototype.toString;
+  const nativeSetTimeout = window.setTimeout.bind(window);
+  const nativeSetInterval = window.setInterval.bind(window);
+  const nativeGetOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
 
   function emit(type, data) {
     try {
@@ -339,4 +352,86 @@
   }
 
   installHooks(window);
+
+  /* ================= Hijacking / hook: APIs globais ================= */
+  /*
+   * APIs que scripts de sequestro de navegador costumam sobrescrever:
+   *   - rede (fetch, XMLHttpRequest, WebSocket, sendBeacon): interceptar ou
+   *     desviar requisições, exfiltrar dados;
+   *   - eventos e formulários (addEventListener, submit, value): capturar
+   *     teclas e campos (keylogger, skimmer de cartão);
+   *   - execução/injeção de código (eval, Function, document.write,
+   *     createElement, appendChild, innerHTML): carregar mais código;
+   *   - navegação (open, pushState): redirecionar o usuário;
+   *   - Function.prototype.toString: ESCONDER as outras substituições.
+   * Nenhuma delas é alterada pelos hooks desta extensão.
+   */
+  const CRITICAL_APIS = [
+    ["window", () => window, ["fetch", "XMLHttpRequest", "WebSocket", "EventSource", "eval", "Function", "open", "postMessage", "setTimeout", "setInterval"]],
+    ["XMLHttpRequest.prototype", () => window.XMLHttpRequest && XMLHttpRequest.prototype, ["open", "send", "setRequestHeader"]],
+    ["WebSocket.prototype", () => window.WebSocket && WebSocket.prototype, ["send"]],
+    ["EventTarget.prototype", () => EventTarget.prototype, ["addEventListener", "removeEventListener", "dispatchEvent"]],
+    ["Document.prototype", () => Document.prototype, ["write", "writeln", "createElement", "cookie"]],
+    ["document", () => window.document, ["write", "writeln", "cookie", "createElement", "getElementById", "querySelector"]],
+    ["Node.prototype", () => Node.prototype, ["appendChild", "insertBefore"]],
+    ["Element.prototype", () => Element.prototype, ["setAttribute", "innerHTML"]],
+    ["HTMLFormElement.prototype", () => window.HTMLFormElement && HTMLFormElement.prototype, ["submit"]],
+    ["HTMLInputElement.prototype", () => window.HTMLInputElement && HTMLInputElement.prototype, ["value"]],
+    ["History.prototype", () => window.History && History.prototype, ["pushState", "replaceState"]],
+    ["Navigator.prototype", () => window.Navigator && Navigator.prototype, ["sendBeacon", "userAgent"]],
+    ["Function.prototype", () => Function.prototype, ["toString", "call", "apply", "bind"]],
+    ["JSON", () => window.JSON, ["stringify", "parse"]]
+  ];
+
+  const baseline = new Map();   // "Obj.prop" -> {obj, prop, desc}
+  const reportedApis = new Set();
+  const startedAt = Date.now();
+
+  for (const [label, getObj, props] of CRITICAL_APIS) {
+    let obj;
+    try { obj = getObj(); } catch (e) { continue; }
+    if (!obj) continue;
+    for (const prop of props) {
+      try {
+        baseline.set(`${label}.${prop}`, { obj, prop, desc: nativeGetOwnPropertyDescriptor(obj, prop) });
+      } catch (e) { /* ignore */ }
+    }
+  }
+
+  function describeFn(fn) {
+    if (typeof fn !== "function") return { native: false, source: String(fn).slice(0, 150) };
+    let src = "";
+    try { src = nativeToString.call(fn); } catch (e) { src = "(código inacessível)"; }
+    return { native: /\{\s*\[native code\]\s*\}\s*$/.test(src), source: src.slice(0, 150) };
+  }
+
+  function checkGlobals() {
+    for (const [api, { obj, prop, desc }] of baseline) {
+      if (reportedApis.has(api)) continue;
+      let now;
+      try { now = nativeGetOwnPropertyDescriptor(obj, prop); } catch (e) { continue; }
+      const same = (!desc && !now) || (desc && now &&
+        desc.value === now.value && desc.get === now.get && desc.set === now.set);
+      if (same) continue;
+
+      reportedApis.add(api);
+      const replacement = now ? (now.value !== undefined ? now.value : (now.get || now.set)) : undefined;
+      const info = now ? describeFn(replacement) : { native: false, source: "(propriedade removida)" };
+      emit("hook.global", {
+        api,
+        change: !now ? "removida" : (desc && desc.value !== undefined && now.get) ? "virou getter" : "substituída",
+        replacementIsNative: info.native,
+        source: info.source,
+        afterMs: Date.now() - startedAt
+      });
+    }
+  }
+
+  document.addEventListener("DOMContentLoaded", checkGlobals);
+  window.addEventListener("load", () => {
+    checkGlobals();
+    nativeSetTimeout(checkGlobals, 1000);
+    nativeSetTimeout(checkGlobals, 3000);
+  });
+  nativeSetInterval(checkGlobals, 5000);
 })();
