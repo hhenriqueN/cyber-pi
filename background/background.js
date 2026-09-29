@@ -51,6 +51,21 @@ function saveBlockList() {
   browser.storage.local.set({ blockList: [...blockList] }).catch(() => {});
 }
 
+/*
+ * Um pedido é bloqueado quando o domínio da requisição casa com uma entrada da
+ * lista, seja pelo domínio registrável (eTLD+1, bloqueia o site inteiro), seja
+ * por hostname exato ou subdomínio (ex.: entrada "bad.third-party.site" bloqueia
+ * "bad.third-party.site" mas não "good.third-party.site").
+ */
+function blockMatch(hostname, reqSite) {
+  if (!hostname) return false;
+  if (reqSite && blockList.has(reqSite)) return true;
+  for (const entry of blockList) {
+    if (hostname === entry || hostname.endsWith("." + entry)) return true;
+  }
+  return false;
+}
+
 /* ------------------------------------------------------------------ */
 /* Utilitários de domínio                                              */
 /* ------------------------------------------------------------------ */
@@ -194,8 +209,9 @@ function onBeforeRequest(details) {
   const reqSite = siteOf(details.url);
 
   // Lista de bloqueio: cancela a requisição antes de qualquer registro.
-  if (reqSite && blockList.has(reqSite)) {
-    state.blocked.set(reqSite, (state.blocked.get(reqSite) || 0) + 1);
+  if (blockMatch(hostnameOf(details.url), reqSite)) {
+    const key = reqSite || hostnameOf(details.url);
+    state.blocked.set(key, (state.blocked.get(key) || 0) + 1);
     updateBadge(details.tabId);
     return { cancel: true };
   }
